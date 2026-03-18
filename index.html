@@ -62,20 +62,24 @@
     overflow: hidden;
   }
 
-  /* video는 숨기고 캔버스가 화면을 담당 */
+  /* 비디오가 비율을 담당 — object-fit:cover로 꽉 채움 */
   #videoEl {
     position: absolute;
-    width: 1px; height: 1px;
-    opacity: 0; pointer-events: none;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* selfie mirror */
+    display: block;
   }
 
-  /* canvas fills the section with correct aspect ratio */
+  /* 캔버스는 스켈레톤·진행표시만 — 투명 오버레이 */
   #overlayCanvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
     pointer-events: none;
+    /* 캔버스도 미러링해서 랜드마크가 비디오와 일치 */
+    transform: scaleX(-1);
   }
 
   /* Text overlay on camera */
@@ -694,22 +698,12 @@ const autoDetectLabel = document.getElementById('autoDetectLabel');
 // ─────────────────────────────────────
 // CANVAS — 비디오 비율 유지하며 letterbox
 // ─────────────────────────────────────
-function getDrawRect() {
-  const cw = overlayCanvas.width, ch = overlayCanvas.height;
-  const vw = video.videoWidth  || 1280;
-  const vh = video.videoHeight || 720;
-  const scale = Math.min(cw / vw, ch / vh);
-  const dw = vw * scale, dh = vh * scale;
-  const dx = (cw - dw) / 2, dy = (ch - dh) / 2;
-  return { dx, dy, dw, dh, scale };
-}
-
 function resizeCanvas() {
-  const r = overlayCanvas.parentElement.getBoundingClientRect();
+  const r = overlayCanvas.getBoundingClientRect();
   overlayCanvas.width  = r.width  || 640;
   overlayCanvas.height = r.height || 480;
 }
-window.addEventListener('resize', () => { resizeCanvas(); });
+window.addEventListener('resize', resizeCanvas);
 
 // ─────────────────────────────────────
 // MEDIAPIPE INIT
@@ -806,34 +800,31 @@ function findDetected(results) {
 }
 
 // ─────────────────────────────────────
-// DRAW FRAME — 비율 유지 letterbox
+// DRAW — 비디오는 video 태그가 담당, 캔버스는 스켈레톤만
+// canvas에 scaleX(-1) CSS가 있으므로 x좌표 미러 변환 불필요
 // ─────────────────────────────────────
 function drawFrame(results) {
   const cw = overlayCanvas.width, ch = overlayCanvas.height;
   ctx.clearRect(0, 0, cw, ch);
 
-  if (video.readyState < 2) return;
-
-  const { dx, dy, dw, dh } = getDrawRect();
-
-  // 미러 드로우: 비디오를 좌우 반전해서 정확한 비율로 그림
-  ctx.save();
-  ctx.translate(dx + dw, dy);
-  ctx.scale(-1, 1);
-  ctx.drawImage(video, 0, 0, dw, dh);
-  ctx.restore();
-
   if (!results?.multiHandLandmarks?.length) return;
 
+  // object-fit:cover 기준으로 랜드마크 좌표 매핑
+  const vw = video.videoWidth  || 1280;
+  const vh = video.videoHeight || 720;
+  const scale = Math.max(cw / vw, ch / vh); // cover = max
+  const dw = vw * scale, dh = vh * scale;
+  const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
+
   results.multiHandLandmarks.forEach(lm => {
-    // 랜드마크를 letterbox 좌표계로 변환 + x 미러
+    // 정규화 좌표 → cover 좌표계로 변환 (미러는 CSS가 처리)
     const mapped = lm.map(pt => ({
-      x: dx/cw + (1 - pt.x) * (dw/cw),
-      y: dy/ch + pt.y * (dh/ch),
+      x: (ox + pt.x * dw) / cw,
+      y: (oy + pt.y * dh) / ch,
       z: pt.z
     }));
     drawConnectors(ctx, mapped, HAND_CONNECTIONS,
-      { color: 'rgba(232,255,71,0.6)', lineWidth: 2 });
+      { color: 'rgba(232,255,71,0.65)', lineWidth: 2 });
     drawLandmarks(ctx, mapped, {
       color: 'rgba(255,255,255,0.9)',
       fillColor: 'rgba(232,255,71,0.85)',
@@ -847,13 +838,19 @@ function drawFrame(results) {
 // ─────────────────────────────────────
 function drawProgress(progress, lm) {
   const cw = overlayCanvas.width, ch = overlayCanvas.height;
-  const { dx, dy, dw, dh } = getDrawRect();
-  const mirX = dx + (1 - lm[LM.MIDDLE_MCP].x) * dw;
-  const mirY = dy + lm[LM.MIDDLE_MCP].y * dh - 60;
+  const vw = video.videoWidth  || 1280;
+  const vh = video.videoHeight || 720;
+  const scale = Math.max(cw / vw, ch / vh);
+  const dw = vw * scale, dh = vh * scale;
+  const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
+
+  // canvas는 scaleX(-1)이므로 x는 그대로 (미러 이미 적용됨)
+  const px = ox + lm[LM.MIDDLE_MCP].x * dw;
+  const py = oy + lm[LM.MIDDLE_MCP].y * dh - 60;
   const isHeart = detectedGesture === 'finger_heart' || detectedGesture === 'big_heart';
 
   ctx.save();
-  ctx.translate(mirX, mirY);
+  ctx.translate(px, py);
 
   if (isHeart) {
     const s = 32;
