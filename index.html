@@ -66,16 +66,14 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transform: scaleX(-1);
     display: block;
   }
 
-  /* canvas for MediaPipe overlay — hidden */
+  /* canvas for MediaPipe overlay */
   #overlayCanvas {
     position: absolute;
     top: 0; left: 0;
     width: 100%; height: 100%;
-    transform: scaleX(-1);
     pointer-events: none;
   }
 
@@ -649,71 +647,60 @@
 
 
 <!-- MediaPipe -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+<!-- MediaPipe: drawing_utils + hands only (no camera_utils) -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
 <script>
-// ──────────────────────────────────────
+// ─────────────────────────────────────
 // STATE
-// ──────────────────────────────────────
-let stream = null;
-let detecting = false;
+// ─────────────────────────────────────
+let stream         = null;
+let detecting      = false;
 let selectedGesture = 'peace';
-let timerSeconds = 0;
+let timerSeconds   = 0;
 let textOverlayEnabled = true;
 let currentOverlayText = '✨ 오늘도 빛나는 하루';
 let countdownTimer = null;
 let gestureHoldStart = null;
-let gestureHoldRequired = 1200;
-let photos = [];
-let isCounting = false;
-let gesturePhase = 'idle';
-let mpCamera = null;
-let mpHands = null;
+const HOLD_MS      = 1500;   // 1.5초 유지
+let isCounting     = false;
+let gesturePhase   = 'idle'; // idle | holding | triggered
+let rafId          = null;
+let mpHands        = null;
+let mpReady        = false;
+let lastResults    = null;
 
-const video      = document.getElementById('videoEl');
+const video       = document.getElementById('videoEl');
 const overlayCanvas = document.getElementById('overlayCanvas');
-const ctx        = overlayCanvas.getContext('2d');
+const ctx         = overlayCanvas.getContext('2d');
 const countdownOverlay = document.getElementById('countdownOverlay');
-const countNum   = document.getElementById('countNum');
-const flashEl    = document.getElementById('flashEl');
+const countNum    = document.getElementById('countNum');
+const flashEl     = document.getElementById('flashEl');
 const gestureStatus = document.getElementById('gestureStatus');
 const gestureLabel  = document.getElementById('gestureLabel');
 const cameraOverlay = document.getElementById('cameraOverlay');
 const overlayTextEl = document.getElementById('overlayTextEl');
-const startBtn   = document.getElementById('startBtn');
-const permScreen = document.getElementById('permScreen');
+const startBtn    = document.getElementById('startBtn');
+const permScreen  = document.getElementById('permScreen');
 
-// ──────────────────────────────────────
-// CAMERA
-// ──────────────────────────────────────
-async function startCamera() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false
-    });
-    video.srcObject = stream;
-    permScreen.classList.add('hidden');
-    resizeCanvas();
-    initMediaPipe();
-  } catch(e) {
-    permScreen.querySelector('.perm-text').textContent = '카메라 접근 실패: ' + e.message;
+// ─────────────────────────────────────
+// CANVAS SIZE
+// ─────────────────────────────────────
+function resizeCanvas() {
+  const r = video.getBoundingClientRect();
+  if (r.width > 0) {
+    overlayCanvas.width  = r.width;
+    overlayCanvas.height = r.height;
   }
 }
-
-function resizeCanvas() {
-  const rect = video.getBoundingClientRect();
-  overlayCanvas.width  = rect.width  || 640;
-  overlayCanvas.height = rect.height || 480;
-}
 window.addEventListener('resize', resizeCanvas);
-video.addEventListener('loadedmetadata', resizeCanvas);
+video.addEventListener('loadedmetadata', () => { resizeCanvas(); });
 
-// ──────────────────────────────────────
-// MEDIAPIPE HANDS 초기화
-// ──────────────────────────────────────
+// ─────────────────────────────────────
+// MEDIAPIPE INIT
+// ─────────────────────────────────────
 function initMediaPipe() {
   mpHands = new Hands({
     locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
@@ -721,14 +708,39 @@ function initMediaPipe() {
   mpHands.setOptions({
     maxNumHands: 2,
     modelComplexity: 1,
-    minDetectionConfidence: 0.75,
-    minTrackingConfidence: 0.65
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.6
   });
-  mpHands.onResults(onHandResults);
-  setGestureStatus('MediaPipe 준비 완료', false);
+  mpHands.onResults(results => { lastResults = results; });
+  mpHands.initialize().then(() => {
+    mpReady = true;
+    setGestureStatus('준비 완료 — 제스처를 취하세요', false);
+  });
 }
 
-// ── 랜드마크 인덱스 ──
+// ─────────────────────────────────────
+// CAMERA
+// ─────────────────────────────────────
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    await new Promise(r => video.onloadedmetadata = r);
+    video.play();
+    permScreen.classList.add('hidden');
+    resizeCanvas();
+    initMediaPipe();
+  } catch(e) {
+    permScreen.querySelector('.perm-text').textContent = '카메라 오류: ' + e.message;
+  }
+}
+
+// ─────────────────────────────────────
+// LANDMARK HELPERS
+// ─────────────────────────────────────
 const LM = {
   WRIST:0,
   THUMB_CMC:1, THUMB_MCP:2, THUMB_IP:3, THUMB_TIP:4,
@@ -738,198 +750,237 @@ const LM = {
   PINKY_MCP:17, PINKY_PIP:18, PINKY_DIP:19, PINKY_TIP:20
 };
 
-function dist2D(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
+function dist(a, b) { return Math.hypot(a.x-b.x, a.y-b.y); }
 
-// 손가락 펼침: tip.y < mcp.y (화면 위가 y=0이므로 tip이 mcp보다 위에 있으면 펴짐)
-// MCP 기준이 PIP보다 훨씬 안정적
-function extended(lm, tip, mcp) {
-  return lm[tip].y < lm[mcp].y - 0.02; // 0.02 margin으로 노이즈 제거
-}
+// tip.y < mcp.y → 손가락이 위로 펴져 있음 (y=0이 화면 상단)
+function up(lm, tip, mcp) { return lm[tip].y < lm[mcp].y - 0.03; }
 
-// ── 제스처 판별 ──
-function classifyGesture(lm) {
-  const iExt = extended(lm, LM.INDEX_TIP,  LM.INDEX_MCP);
-  const mExt = extended(lm, LM.MIDDLE_TIP, LM.MIDDLE_MCP);
-  const rExt = extended(lm, LM.RING_TIP,   LM.RING_MCP);
-  const pExt = extended(lm, LM.PINKY_TIP,  LM.PINKY_MCP);
-  // 엄지: tip이 CMC(손목 쪽 관절)보다 위에 있으면 펴진 것
-  const tExt = lm[LM.THUMB_TIP].y < lm[LM.THUMB_CMC].y;
+// ─────────────────────────────────────
+// GESTURE CLASSIFY
+// ─────────────────────────────────────
+function classify(lm) {
+  const i = up(lm, LM.INDEX_TIP,  LM.INDEX_MCP);
+  const m = up(lm, LM.MIDDLE_TIP, LM.MIDDLE_MCP);
+  const r = up(lm, LM.RING_TIP,   LM.RING_MCP);
+  const p = up(lm, LM.PINKY_TIP,  LM.PINKY_MCP);
+  // 엄지: tip이 ip보다 위에 있으면 펴짐
+  const t = lm[LM.THUMB_TIP].y < lm[LM.THUMB_IP].y - 0.02;
 
-  switch (selectedGesture) {
-    case 'peace':
-      // 검지 + 중지 펴고, 약지 + 새끼 접음
-      return iExt && mExt && !rExt && !pExt;
-
-    case 'thumbs_up':
-      // 엄지만 펴고, 나머지 4개 접음
-      return tExt && !iExt && !mExt && !rExt && !pExt;
-
-    case 'open_hand':
-      // 4개 손가락 모두 펴짐 (엄지 무관)
-      return iExt && mExt && rExt && pExt;
-
-    case 'fist':
-      // 4개 손가락 모두 접힘
-      return !iExt && !mExt && !rExt && !pExt;
-
+  switch(selectedGesture) {
+    case 'peace':       return i && m && !r && !p;
+    case 'thumbs_up':   return t && !i && !m && !r && !p;
+    case 'open_hand':   return i && m && r && p;
+    case 'fist':        return !i && !m && !r && !p;
     case 'finger_heart': {
-      // 엄지 끝 ↔ 검지 끝 거리가 손 크기의 45% 이하
-      const d = dist2D(lm[LM.THUMB_TIP], lm[LM.INDEX_TIP]);
-      const handSize = dist2D(lm[LM.WRIST], lm[LM.MIDDLE_MCP]);
-      return d < handSize * 0.45;
+      const d = dist(lm[LM.THUMB_TIP], lm[LM.INDEX_TIP]);
+      const s = dist(lm[LM.WRIST], lm[LM.MIDDLE_MCP]);
+      return d < s * 0.5;
     }
-
-    case 'big_heart':
-      // 단일 손일 때는 오픈핸드로 fallback
-      return iExt && mExt && rExt && pExt;
-
-    default:
-      return false;
+    case 'big_heart':   return i && m && r && p; // 양손은 아래서 처리
+    default: return false;
   }
 }
 
-// 큰 하트: 양손 엄지 끝이 가까이 닿거나, 검지 끝이 가까울 때
-function isBigHeart(multiLm) {
-  if (multiLm.length < 2) return false;
-  const thumbDist = dist2D(multiLm[0][LM.THUMB_TIP], multiLm[1][LM.THUMB_TIP]);
-  const indexDist = dist2D(multiLm[0][LM.INDEX_TIP], multiLm[1][LM.INDEX_TIP]);
-  return thumbDist < 0.20 || indexDist < 0.20;
+function bigHeart(multi) {
+  if (multi.length < 2) return false;
+  // 양손 엄지 또는 검지 끝이 0.22 이내
+  return dist(multi[0][LM.THUMB_TIP], multi[1][LM.THUMB_TIP]) < 0.22
+      || dist(multi[0][LM.INDEX_TIP], multi[1][LM.INDEX_TIP])  < 0.22;
 }
 
-// ── MediaPipe 결과 콜백 ──
-function onHandResults(results) {
-  resizeCanvas();
+// ─────────────────────────────────────
+// DRAW — 미러링은 캔버스에서 처리
+// ─────────────────────────────────────
+function drawFrame(results) {
   const w = overlayCanvas.width, h = overlayCanvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  if (!detecting || isCounting) return;
+  // 비디오를 좌우 반전해서 캔버스에 그림 (selfie mirror)
+  ctx.save();
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, -w, 0, w, h);
+  ctx.restore();
 
-  const multiLm = results.multiHandLandmarks;
-  if (!multiLm || multiLm.length === 0) {
-    if (gesturePhase === 'holding') {
-      gesturePhase = 'idle';
-      gestureHoldStart = null;
-      setGestureStatus('손을 카메라에 보여주세요', false);
-    }
-    return;
-  }
+  if (!results || !results.multiHandLandmarks) return;
 
-  // 스켈레톤 그리기
-  multiLm.forEach(lm => {
-    drawConnectors(ctx, lm, HAND_CONNECTIONS,
-      { color: 'rgba(232,255,71,0.55)', lineWidth: 2 });
-    drawLandmarks(ctx, lm, {
+  results.multiHandLandmarks.forEach(lm => {
+    // 랜드마크 x를 미러 변환해서 그리기
+    const mirroredLm = lm.map(pt => ({ x: 1 - pt.x, y: pt.y, z: pt.z }));
+
+    drawConnectors(ctx, mirroredLm, HAND_CONNECTIONS,
+      { color: 'rgba(232,255,71,0.6)', lineWidth: 2 });
+    drawLandmarks(ctx, mirroredLm, {
       color: 'rgba(255,255,255,0.9)',
-      fillColor: 'rgba(232,255,71,0.8)',
+      fillColor: 'rgba(232,255,71,0.85)',
       lineWidth: 1, radius: 3
     });
   });
-
-  // 제스처 판별
-  let detected = false;
-  if (selectedGesture === 'big_heart') {
-    detected = isBigHeart(multiLm);
-  } else {
-    detected = classifyGesture(multiLm[0]);
-  }
-
-  // 디버그: 현재 제스처 상태를 캔버스에 표시
-  ctx.save();
-  ctx.font = 'bold 13px monospace';
-  ctx.textAlign = 'left';
-  ctx.fillStyle = detected ? '#e8ff47' : 'rgba(255,255,255,0.5)';
-  ctx.fillText(detected ? '✓ ' + getGestureName(selectedGesture) : '제스처를 취하세요', 12, h - 14);
-  ctx.restore();
-
-  if (detected) {
-    if (gesturePhase === 'idle' || gesturePhase === 'triggered') {
-      // triggered 상태도 idle로 리셋해서 재인식 허용
-      if (gesturePhase === 'triggered') return; // 촬영 중엔 skip
-      gesturePhase = 'holding';
-      gestureHoldStart = Date.now();
-    } else if (gesturePhase === 'holding') {
-      const held = Date.now() - gestureHoldStart;
-      const progress = Math.min(held / gestureHoldRequired, 1);
-      drawProgress(w, h, progress, multiLm[0]);
-      setGestureStatus(getGestureName(selectedGesture) + ' — 유지하세요!', true);
-      if (held >= gestureHoldRequired) {
-        gesturePhase = 'triggered';
-        triggerShot();
-      }
-    }
-  } else {
-    if (gesturePhase === 'holding') {
-      gesturePhase = 'idle';
-      gestureHoldStart = null;
-      setGestureStatus('감지 중...', false);
-    }
-  }
 }
 
-// ── 진행 표시 (손 위에 표시) ──
-function drawProgress(w, h, progress, lm) {
-  // 손 중심 위쪽에 표시
-  const cx = lm[LM.MIDDLE_MCP].x * w;
-  const cy = lm[LM.MIDDLE_MCP].y * h - 55;
+// ─────────────────────────────────────
+// PROGRESS INDICATOR
+// ─────────────────────────────────────
+function drawProgress(progress, lm) {
+  const w = overlayCanvas.width, h = overlayCanvas.height;
+  const mirX = (1 - lm[LM.MIDDLE_MCP].x) * w;
+  const mirY = lm[LM.MIDDLE_MCP].y * h - 60;
   const isHeart = selectedGesture === 'finger_heart' || selectedGesture === 'big_heart';
 
   ctx.save();
-  ctx.translate(cx, cy);
+  ctx.translate(mirX, mirY);
 
   if (isHeart) {
-    const hs = 30;
-    ctx.beginPath(); drawHeartPath(ctx, hs);
-    ctx.fillStyle = `rgba(255,80,120,${0.2 + progress * 0.65})`;
+    const s = 32;
+    ctx.beginPath(); heartPath(ctx, s);
+    ctx.fillStyle = `rgba(255,70,110,${0.25 + progress * 0.65})`;
     ctx.fill();
-    ctx.strokeStyle = `rgba(255,140,160,${0.6 + progress * 0.4})`;
+    ctx.strokeStyle = `rgba(255,130,160,${0.7 + progress*0.3})`;
     ctx.lineWidth = 2.5; ctx.stroke();
 
-    // 미니 하트 파티클
-    if (progress > 0.3) {
+    if (progress > 0.25) {
       for (let i = 0; i < 3; i++) {
-        const px = Math.sin((Date.now() / 500) + i * 2.1) * 40;
-        const py = -40 - (((Date.now() / 600 + i * 0.8) % 1) * 40);
-        ctx.save();
-        ctx.translate(px, py);
-        ctx.globalAlpha = 0.65 * progress;
-        ctx.beginPath(); drawHeartPath(ctx, 8);
-        ctx.fillStyle = '#ff6080'; ctx.fill();
+        const px = Math.sin(Date.now()/450 + i*2.1) * 38;
+        const py = -42 - ((Date.now()/550 + i*0.7) % 1) * 38;
+        ctx.save(); ctx.translate(px, py); ctx.globalAlpha = 0.7 * progress;
+        ctx.beginPath(); heartPath(ctx, 8);
+        ctx.fillStyle = '#ff5080'; ctx.fill();
         ctx.restore();
       }
     }
   } else {
     // 원형 프로그레스
     ctx.beginPath();
-    ctx.arc(0, 0, 26, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = 3; ctx.stroke();
-
+    ctx.arc(0, 0, 28, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 3; ctx.stroke();
     ctx.beginPath();
-    ctx.arc(0, 0, 26, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
-    ctx.strokeStyle = '#e8ff47';
-    ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.stroke();
+    ctx.arc(0, 0, 28, -Math.PI/2, -Math.PI/2 + progress*Math.PI*2);
+    ctx.strokeStyle = '#e8ff47'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.stroke();
   }
+
+  // 퍼센트 텍스트
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.round(progress*100)+'%', 0, isHeart ? 52 : 4);
 
   ctx.restore();
 }
 
-function drawHeartPath(ctx, s) {
-  ctx.moveTo(0, -s * 0.2);
-  ctx.bezierCurveTo(0, -s*0.7, -s, -s*0.7, -s, -s*0.1);
-  ctx.bezierCurveTo(-s, s*0.4, 0, s*0.75, 0, s*0.9);
-  ctx.bezierCurveTo(0, s*0.75, s, s*0.4, s, -s*0.1);
-  ctx.bezierCurveTo(s, -s*0.7, 0, -s*0.7, 0, -s*0.2);
+function heartPath(ctx, s) {
+  ctx.moveTo(0, -s*0.2);
+  ctx.bezierCurveTo(0,-s*.7,-s,-s*.7,-s,-s*.1);
+  ctx.bezierCurveTo(-s,s*.4,0,s*.75,0,s*.9);
+  ctx.bezierCurveTo(0,s*.75,s,s*.4,s,-s*.1);
+  ctx.bezierCurveTo(s,-s*.7,0,-s*.7,0,-s*.2);
 }
 
-// ──────────────────────────────────────
+// ─────────────────────────────────────
+// MAIN rAF LOOP
+// ─────────────────────────────────────
+let lastSendTime = 0;
+
+async function loop() {
+  if (!detecting) return;
+  rafId = requestAnimationFrame(loop);
+
+  if (!mpReady || video.readyState < 2) return;
+
+  // MediaPipe에 30fps로 전송
+  const now = Date.now();
+  if (now - lastSendTime > 33) {
+    lastSendTime = now;
+    try { await mpHands.send({ image: video }); } catch(e) {}
+  }
+
+  const results = lastResults;
+  drawFrame(results);
+
+  if (isCounting || !results || !results.multiHandLandmarks) {
+    if (gesturePhase === 'holding' && !isCounting) {
+      gesturePhase = 'idle'; gestureHoldStart = null;
+      setGestureStatus('제스처를 취하세요', false);
+    }
+
+    // 상태 텍스트
+    if (!results?.multiHandLandmarks?.length) {
+      ctx.save();
+      ctx.font = '12px monospace';
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.textAlign = 'left';
+      const w = overlayCanvas.width, h = overlayCanvas.height;
+      ctx.fillText('손을 카메라에 보여주세요', 12, h - 12);
+      ctx.restore();
+    }
+    return;
+  }
+
+  const multi = results.multiHandLandmarks;
+  let detected = selectedGesture === 'big_heart'
+    ? bigHeart(multi)
+    : classify(multi[0]);
+
+  // 디버그 상태 표시
+  const w = overlayCanvas.width, h = overlayCanvas.height;
+  ctx.save();
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = detected ? '#e8ff47' : 'rgba(255,255,255,0.4)';
+  ctx.fillText(detected ? '✓ ' + getGestureName(selectedGesture) + ' 인식됨' : getGestureName(selectedGesture) + ' 취해주세요', 12, h - 12);
+  ctx.restore();
+
+  if (detected) {
+    if (gesturePhase === 'idle') {
+      gesturePhase = 'holding';
+      gestureHoldStart = now;
+    } else if (gesturePhase === 'holding') {
+      const held = now - gestureHoldStart;
+      const progress = Math.min(held / HOLD_MS, 1);
+      drawProgress(progress, multi[0]);
+      setGestureStatus(getGestureName(selectedGesture) + ' — 유지 중...', true);
+      if (held >= HOLD_MS) {
+        gesturePhase = 'triggered';
+        triggerShot();
+      }
+    }
+  } else {
+    if (gesturePhase === 'holding') {
+      gesturePhase = 'idle'; gestureHoldStart = null;
+      setGestureStatus('감지 중...', false);
+    }
+  }
+}
+
+// ─────────────────────────────────────
+// DETECTION TOGGLE
+// ─────────────────────────────────────
+function toggleDetection() {
+  if (!stream) { startCamera().then(() => setTimeout(toggleDetection, 1500)); return; }
+  detecting = !detecting;
+
+  if (detecting) {
+    startBtn.textContent = '감지 중지';
+    startBtn.classList.add('running');
+    setGestureStatus('감지 중...', false);
+    loop();
+  } else {
+    startBtn.textContent = '모션 감지 시작';
+    startBtn.classList.remove('running');
+    setGestureStatus('제스처 대기 중', false);
+    cancelAnimationFrame(rafId);
+    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    gesturePhase = 'idle'; gestureHoldStart = null;
+    if (isCounting) cancelCountdown();
+  }
+}
+
+// ─────────────────────────────────────
 // GESTURE / TIMER UI
-// ──────────────────────────────────────
+// ─────────────────────────────────────
 function selectGesture(g, el) {
   selectedGesture = g;
   document.querySelectorAll('.gesture-card').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
+  gesturePhase = 'idle'; gestureHoldStart = null;
 }
 
 function selectTimer(t, el) {
@@ -939,9 +990,8 @@ function selectTimer(t, el) {
 }
 
 function getGestureName(g) {
-  const n = { peace:'✌️ 피스', thumbs_up:'👍 엄지척', open_hand:'🖐 손 펼치기',
-               fist:'✊ 주먹', finger_heart:'🫰 손가락 하트', big_heart:'🫶 큰 하트' };
-  return n[g] || g;
+  return {peace:'✌️ 피스', thumbs_up:'👍 엄지척', open_hand:'🖐 손 펼치기',
+          fist:'✊ 주먹', finger_heart:'🫰 손가락 하트', big_heart:'🫶 큰 하트'}[g] || g;
 }
 
 function setGestureStatus(text, active) {
@@ -949,9 +999,9 @@ function setGestureStatus(text, active) {
   gestureStatus.classList.toggle('detected', active);
 }
 
-// ──────────────────────────────────────
+// ─────────────────────────────────────
 // TEXT OVERLAY
-// ──────────────────────────────────────
+// ─────────────────────────────────────
 function toggleTextOverlay() {
   textOverlayEnabled = !textOverlayEnabled;
   document.getElementById('textToggle').classList.toggle('on', textOverlayEnabled);
@@ -974,7 +1024,7 @@ function updateOverlayText(text) {
 
 function updateTextStyle() {
   const s = document.getElementById('textStyle').value;
-  overlayTextEl.className = 'overlay-text' + (s ? ' ' + s : '');
+  overlayTextEl.className = 'overlay-text' + (s ? ' '+s : '');
 }
 
 function updateTextPosition() {
@@ -982,56 +1032,20 @@ function updateTextPosition() {
   cameraOverlay.className = 'camera-text-overlay visible ' + p;
 }
 
-// ──────────────────────────────────────
-// DETECTION TOGGLE
-// ──────────────────────────────────────
-function toggleDetection() {
-  if (!stream) { startCamera().then(() => setTimeout(toggleDetection, 1200)); return; }
-  detecting = !detecting;
-
-  if (detecting) {
-    startBtn.textContent = '감지 중지';
-    startBtn.classList.add('running');
-    setGestureStatus('감지 중...', false);
-
-    // MediaPipe Camera 루프 시작
-    mpCamera = new Camera(video, {
-      onFrame: async () => {
-        resizeCanvas();
-        if (mpHands) await mpHands.send({ image: video });
-      },
-      width: 1280, height: 720
-    });
-    mpCamera.start();
-  } else {
-    startBtn.textContent = '모션 감지 시작';
-    startBtn.classList.remove('running');
-    setGestureStatus('제스처 대기 중', false);
-    if (mpCamera) { mpCamera.stop(); mpCamera = null; }
-    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    gesturePhase = 'idle';
-    gestureHoldStart = null;
-    if (isCounting) cancelCountdown();
-  }
-}
-
-// ──────────────────────────────────────
+// ─────────────────────────────────────
 // TRIGGER / COUNTDOWN
-// ──────────────────────────────────────
+// ─────────────────────────────────────
 function triggerShot() {
   isCounting = true;
-  ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-
   if (timerSeconds === 0) {
     capturePhoto();
   } else {
-    let remaining = timerSeconds;
+    let rem = timerSeconds;
     countdownOverlay.classList.add('active');
-    countNum.textContent = remaining;
-
+    countNum.textContent = rem;
     countdownTimer = setInterval(() => {
-      remaining--;
-      if (remaining <= 0) {
+      rem--;
+      if (rem <= 0) {
         clearInterval(countdownTimer);
         countdownOverlay.classList.remove('active');
         capturePhoto();
@@ -1039,7 +1053,7 @@ function triggerShot() {
         countNum.style.animation = 'none';
         countNum.offsetHeight;
         countNum.style.animation = 'countPulse 0.8s ease-out';
-        countNum.textContent = remaining;
+        countNum.textContent = rem;
       }
     }, 1000);
   }
@@ -1048,114 +1062,99 @@ function triggerShot() {
 function cancelCountdown() {
   clearInterval(countdownTimer);
   countdownOverlay.classList.remove('active');
-  isCounting = false;
-  gesturePhase = 'idle';
+  isCounting = false; gesturePhase = 'idle';
 }
 
-// ──────────────────────────────────────
-// CAPTURE
-// ──────────────────────────────────────
+// ─────────────────────────────────────
+// CAPTURE — overlayCanvas에 미리 미러 그림이 있으므로 그걸 사용
+// ─────────────────────────────────────
 function capturePhoto() {
   const cap  = document.getElementById('captureCanvas');
   const cctx = cap.getContext('2d');
-  const w = cap.width  = video.videoWidth  || 640;
-  const h = cap.height = video.videoHeight || 480;
+  const w = cap.width  = overlayCanvas.width;
+  const h = cap.height = overlayCanvas.height;
 
+  // overlayCanvas에는 이미 미러된 비디오가 그려져 있음
+  // 스켈레톤 없이 깨끗한 사진을 위해 비디오만 다시 그림
   cctx.save();
   cctx.scale(-1, 1);
   cctx.drawImage(video, -w, 0, w, h);
   cctx.restore();
 
+  // 텍스트 오버레이
   if (textOverlayEnabled && currentOverlayText) {
     const pos   = document.getElementById('textPosition').value || 'pos-bottom';
     const style = document.getElementById('textStyle').value;
 
-    // 그라디언트 배경
     if (pos !== 'pos-center') {
       const grd = cctx.createLinearGradient(
-        0, pos === 'pos-top' ? 0 : h * 0.65,
-        0, pos === 'pos-top' ? h * 0.35 : h
-      );
-      if (pos === 'pos-top') { grd.addColorStop(0,'rgba(0,0,0,0.65)'); grd.addColorStop(1,'rgba(0,0,0,0)'); }
-      else                   { grd.addColorStop(0,'rgba(0,0,0,0)');    grd.addColorStop(1,'rgba(0,0,0,0.65)'); }
-      cctx.fillStyle = grd;
-      cctx.fillRect(0, 0, w, h);
+        0, pos==='pos-top'?0:h*0.65,
+        0, pos==='pos-top'?h*0.35:h);
+      grd.addColorStop(0, pos==='pos-top'?'rgba(0,0,0,0.65)':'rgba(0,0,0,0)');
+      grd.addColorStop(1, pos==='pos-top'?'rgba(0,0,0,0)':'rgba(0,0,0,0.65)');
+      cctx.fillStyle = grd; cctx.fillRect(0,0,w,h);
     }
 
-    let fs = Math.floor(w * 0.055);
-    let font;
-    if      (style === 'style-elegant') font = `italic ${fs}px 'Playfair Display',Georgia,serif`;
-    else if (style === 'style-bold')    font = `900 ${Math.floor(fs*1.1)}px 'Pretendard',sans-serif`;
-    else if (style === 'style-mono')  { fs = Math.floor(w*0.038); font = `700 ${fs}px 'Space Mono',monospace`; }
-    else                                font = `700 ${fs}px 'Pretendard',sans-serif`;
+    let fs = Math.floor(w*0.055), font;
+    if      (style==='style-elegant') font=`italic ${fs}px 'Playfair Display',Georgia,serif`;
+    else if (style==='style-bold')    font=`900 ${Math.floor(fs*1.1)}px 'Pretendard',sans-serif`;
+    else if (style==='style-mono')  { fs=Math.floor(w*0.038); font=`700 ${fs}px 'Space Mono',monospace`; }
+    else                              font=`700 ${fs}px 'Pretendard',sans-serif`;
 
-    cctx.font = font;
-    cctx.textAlign = 'center';
-    cctx.fillStyle = '#fff';
-    cctx.shadowColor = 'rgba(0,0,0,0.6)';
-    cctx.shadowBlur = 8;
+    cctx.font=font; cctx.textAlign='center';
+    cctx.fillStyle='#fff'; cctx.shadowColor='rgba(0,0,0,0.6)'; cctx.shadowBlur=8;
 
-    const lines = currentOverlayText.split('\n');
-    const lh = fs * 1.35;
-    let startY = pos === 'pos-top' ? fs + 30
-               : pos === 'pos-center' ? h/2 - (lines.length-1)*lh/2
-               : h - 50 - (lines.length-1)*lh;
-    lines.forEach((ln, i) => cctx.fillText(ln, w/2, startY + i*lh));
-    cctx.shadowBlur = 0;
+    const lines=currentOverlayText.split('\n'), lh=fs*1.35;
+    let sy = pos==='pos-top'?fs+30 : pos==='pos-center'?h/2-(lines.length-1)*lh/2 : h-50-(lines.length-1)*lh;
+    lines.forEach((ln,i) => cctx.fillText(ln, w/2, sy+i*lh));
+    cctx.shadowBlur=0;
   }
 
-  // 플래시
-  flashEl.classList.remove('shoot');
-  flashEl.offsetHeight;
-  flashEl.classList.add('shoot');
-
+  // 플래시 + 소리
+  flashEl.classList.remove('shoot'); flashEl.offsetHeight; flashEl.classList.add('shoot');
   playShutterBeep();
 
   const dataURL = cap.toDataURL('image/jpeg', 0.92);
   addThumbnail(dataURL);
 
-  isCounting = false;
-  gesturePhase = 'idle';  // 촬영 후 idle로 복귀 → 다음 제스처 인식 가능
-  gestureHoldStart = null;
-  setGestureStatus('감지 중...', false);
+  // 촬영 후 리셋 (2초 딜레이로 연속 촬영 방지)
+  setTimeout(() => {
+    isCounting = false;
+    gesturePhase = 'idle';
+    gestureHoldStart = null;
+    setGestureStatus('감지 중...', false);
+  }, 2000);
 }
 
 function playShutterBeep() {
   try {
-    const ac = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ac.createOscillator(), gain = ac.createGain();
-    osc.connect(gain); gain.connect(ac.destination);
-    osc.frequency.value = 1200;
-    gain.gain.setValueAtTime(0.3, ac.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.18);
-    osc.start(); osc.stop(ac.currentTime + 0.18);
-  } catch(e) {}
+    const ac=new(window.AudioContext||window.webkitAudioContext)();
+    const osc=ac.createOscillator(), g=ac.createGain();
+    osc.connect(g); g.connect(ac.destination);
+    osc.frequency.value=1200;
+    g.gain.setValueAtTime(0.3,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.18);
+    osc.start(); osc.stop(ac.currentTime+0.18);
+  } catch(e){}
 }
 
 function addThumbnail(dataURL) {
-  const strip = document.getElementById('photoStrip');
-  const img = document.createElement('img');
-  img.className = 'photo-thumb';
-  img.src = dataURL;
-  img.title = '클릭하여 다운로드';
-  img.style.pointerEvents = 'all';
-  img.onclick = () => {
-    const a = document.createElement('a');
-    a.href = dataURL; a.download = `motioncam_${Date.now()}.jpg`; a.click();
-  };
-  strip.insertBefore(img, strip.firstChild);
-  while (strip.children.length > 5) strip.removeChild(strip.lastChild);
+  const strip=document.getElementById('photoStrip');
+  const img=document.createElement('img');
+  img.className='photo-thumb'; img.src=dataURL;
+  img.title='클릭 → 다운로드'; img.style.pointerEvents='all';
+  img.onclick=()=>{ const a=document.createElement('a'); a.href=dataURL; a.download=`motioncam_${Date.now()}.jpg`; a.click(); };
+  strip.insertBefore(img,strip.firstChild);
+  while(strip.children.length>5) strip.removeChild(strip.lastChild);
 }
 
-// ──────────────────────────────────────
+// ─────────────────────────────────────
 // DATE TEMPLATE
-// ──────────────────────────────────────
-const today = new Date();
-const dateStr = `📍 ${today.getFullYear()}. ${String(today.getMonth()+1).padStart(2,'0')}. ${String(today.getDate()).padStart(2,'0')}`;
+// ─────────────────────────────────────
+const today=new Date();
+const dateStr=`📍 ${today.getFullYear()}. ${String(today.getMonth()+1).padStart(2,'0')}. ${String(today.getDate()).padStart(2,'0')}`;
 document.querySelectorAll('.template-item').forEach(item => {
-  if (item.textContent.includes('날짜')) {
-    item.onclick = function() { selectTemplate(this, dateStr); };
-  }
+  if(item.textContent.includes('날짜')) item.onclick=function(){ selectTemplate(this,dateStr); };
 });
 
 // 자동 카메라 시작
