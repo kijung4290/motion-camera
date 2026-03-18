@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>모션 카메라</title>
+<style>
+  @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=Space+Mono:wght@400;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --surface2: #1e1e1e;
+    --border: rgba(255,255,255,0.08);
+    --accent: #e8ff47;
+    --accent2: #ff6b35;
+    --text: #f0f0f0;
+    --muted: #888;
+    --radius: 12px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Pretendard', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+  }
+  .logo span { color: var(--text); }
+
+  /* ── MAIN LAYOUT ── */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 0;
+    height: calc(100vh - 57px);
+  }
+
+  /* ── CAMERA SECTION ── */
+  .camera-section {
+    position: relative;
+    background: #000;
+    overflow: hidden;
+  }
+
+  #videoEl {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    display: block;
+  }
+
+  /* canvas for MediaPipe overlay — hidden */
+  #overlayCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    transform: scaleX(-1);
+    pointer-events: none;
+  }
+
+  /* Text overlay on camera */
+  .camera-text-overlay {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 2rem 2rem 1.5rem;
+    background: linear-gradient(transparent, rgba(0,0,0,0.75));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .camera-text-overlay.visible { opacity: 1; }
+
+  .overlay-text {
+    font-family: 'Pretendard', sans-serif;
+    font-size: clamp(1.2rem, 3vw, 2.2rem);
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+    text-align: center;
+    line-height: 1.3;
+    white-space: pre-wrap;
+  }
+  .overlay-text.style-elegant {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: clamp(1.4rem, 3.5vw, 2.6rem);
+  }
+  .overlay-text.style-bold {
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+  }
+  .overlay-text.style-mono {
+    font-family: 'Space Mono', monospace;
+    font-size: clamp(0.9rem, 2vw, 1.4rem);
+  }
+  .overlay-text.align-top { margin-top: 0; }
+  .overlay-text.align-center { margin: auto; }
+
+  /* Position classes on the wrapper */
+  .camera-text-overlay.pos-top {
+    top: 0; bottom: auto;
+    background: linear-gradient(rgba(0,0,0,0.65), transparent);
+    padding: 1.5rem 2rem 2rem;
+  }
+  .camera-text-overlay.pos-center {
+    top: 50%; bottom: auto;
+    transform: translateY(-50%);
+    background: none;
+  }
+
+  /* ── COUNTDOWN OVERLAY ── */
+  .countdown-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .countdown-overlay.active { opacity: 1; }
+
+  .countdown-number {
+    font-family: 'Space Mono', monospace;
+    font-size: clamp(6rem, 20vw, 14rem);
+    font-weight: 700;
+    color: var(--accent);
+    text-shadow: 0 0 40px rgba(232,255,71,0.5);
+    line-height: 1;
+    animation: countPulse 0.8s ease-out;
+  }
+  @keyframes countPulse {
+    0% { transform: scale(1.4); opacity: 0; }
+    40% { transform: scale(0.95); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .countdown-label {
+    font-size: 0.85rem;
+    letter-spacing: 0.2em;
+    color: rgba(255,255,255,0.7);
+    margin-top: 0.5rem;
+    text-transform: uppercase;
+  }
+
+  /* ── FLASH EFFECT ── */
+  .flash {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .flash.shoot { animation: flashAnim 0.35s ease-out forwards; }
+  @keyframes flashAnim {
+    0% { opacity: 0.95; }
+    100% { opacity: 0; }
+  }
+
+  /* ── GESTURE STATUS ── */
+  .gesture-status {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.7);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 0.4rem 1rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    backdrop-filter: blur(8px);
+    transition: all 0.3s;
+  }
+  .gesture-status .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .gesture-status.detected { border-color: rgba(232,255,71,0.4); color: var(--accent); }
+  .gesture-status.detected .dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+  /* ── PHOTO PREVIEW (bottom strip) ── */
+  .photo-strip {
+    position: absolute;
+    bottom: 5rem;
+    left: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    pointer-events: none;
+  }
+  .photo-thumb {
+    width: 52px;
+    height: 52px;
+    border-radius: 6px;
+    border: 2px solid var(--accent);
+    object-fit: cover;
+    animation: thumbIn 0.3s ease-out;
+  }
+  @keyframes thumbIn {
+    from { transform: scale(0) translateY(10px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .sidebar-section {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-section:last-child { border-bottom: none; }
+
+  .section-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 1rem;
+    font-family: 'Space Mono', monospace;
+  }
+
+  /* ── GESTURE CONFIG ── */
+  .gesture-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  .gesture-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+  .gesture-card:hover { border-color: rgba(232,255,71,0.3); }
+  .gesture-card.active { border-color: var(--accent); background: rgba(232,255,71,0.06); }
+  .gesture-icon { font-size: 1.6rem; display: block; margin-bottom: 0.25rem; }
+  .gesture-name { font-size: 0.72rem; color: var(--muted); }
+
+  /* ── TIMER CONFIG ── */
+  .timer-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .timer-btn {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+  .timer-btn:hover { border-color: rgba(232,255,71,0.3); color: var(--text); }
+  .timer-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(232,255,71,0.06); }
+
+  /* ── TEXT OVERLAY EDITOR ── */
+  .text-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  .toggle-switch {
+    width: 40px; height: 22px;
+    background: var(--surface2);
+    border-radius: 11px;
+    border: 1px solid var(--border);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle-switch.on { background: var(--accent); border-color: var(--accent); }
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    top: 2px; left: 2px;
+    transition: transform 0.2s;
+  }
+  .toggle-switch.on::after { transform: translateX(18px); background: var(--bg); }
+
+  .text-editor-area {
+    display: none;
+  }
+  .text-editor-area.visible { display: block; }
+
+  textarea.overlay-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'Pretendard', sans-serif;
+    font-size: 0.9rem;
+    padding: 0.75rem;
+    resize: vertical;
+    min-height: 70px;
+    outline: none;
+    transition: border-color 0.2s;
+    margin-bottom: 0.75rem;
+  }
+  textarea.overlay-input:focus { border-color: rgba(232,255,71,0.4); }
+
+  /* ── TEMPLATES ── */
+  .templates-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+  }
+  .template-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .template-item:hover { border-color: rgba(232,255,71,0.3); color: var(--text); }
+  .template-item.selected { border-color: var(--accent); color: var(--text); background: rgba(232,255,71,0.05); }
+  .template-emoji { font-size: 1rem; }
+
+  /* Style & Position controls */
+  .controls-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+  .mini-select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.78rem;
+    padding: 0.4rem 0.5rem;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    width: 100%;
+  }
+  .mini-select:focus { border-color: rgba(232,255,71,0.4); }
+  .mini-label { font-size: 0.68rem; color: var(--muted); margin-bottom: 0.25rem; }
+
+  /* ── START BUTTON ── */
+  .start-btn {
+    margin: 1.5rem;
+    width: calc(100% - 3rem);
+    padding: 0.85rem;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: var(--radius);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .start-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(232,255,71,0.25); }
+  .start-btn:active { transform: translateY(0); }
+  .start-btn.running {
+    background: var(--surface2);
+    color: var(--accent2);
+    border: 1px solid var(--accent2);
+  }
+
+  /* ── CAMERA PERMISSION OVERLAY ── */
+  .permission-screen {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    z-index: 20;
+  }
+  .permission-screen.hidden { display: none; }
+  .perm-icon { font-size: 3rem; }
+  .perm-text { color: var(--muted); font-size: 0.9rem; text-align: center; max-width: 200px; line-height: 1.6; }
+  .perm-btn {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 8px;
+    padding: 0.6rem 1.4rem;
+    font-weight: 700;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.8rem;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── GUIDE POPUP ── */
+  .guide-popup {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(20,20,20,0.95);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem;
+    width: 300px;
+    z-index: 30;
+    backdrop-filter: blur(10px);
+    display: none;
+  }
+  .guide-popup.show { display: block; }
+  .guide-popup h3 { font-size: 1rem; margin-bottom: 1rem; color: var(--accent); font-family: 'Space Mono', monospace; }
+  .guide-item { display: flex; gap: 0.75rem; align-items: flex-start; margin-bottom: 0.75rem; font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+  .guide-num { color: var(--accent); font-weight: 700; font-family: 'Space Mono', monospace; flex-shrink: 0; }
+  .guide-close { margin-top: 1rem; width: 100%; padding: 0.5rem; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); cursor: pointer; font-size: 0.8rem; }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 700px) {
+    .main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; height: auto; }
+    .camera-section { height: 60vw; min-height: 280px; }
+    .sidebar { border-left: none; border-top: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">MOTION<span>CAM</span></div>
+  <button onclick="document.querySelector('.guide-popup').classList.toggle('show')" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:0.3rem 0.7rem;font-size:0.75rem;cursor:pointer;font-family:'Space Mono',monospace;">?  가이드</button>
+</header>
+
+<div class="main">
+
+  <!-- ── CAMERA AREA ── -->
+  <div class="camera-section">
+    <div class="permission-screen" id="permScreen">
+      <div class="perm-icon">📷</div>
+      <div class="perm-text">카메라 접근 권한이 필요합니다</div>
+      <button class="perm-btn" onclick="startCamera()">카메라 시작</button>
+    </div>
+
+    <video id="videoEl" autoplay muted playsinline></video>
+    <canvas id="overlayCanvas"></canvas>
+
+    <!-- Gesture status pill -->
+    <div class="gesture-status" id="gestureStatus">
+      <div class="dot"></div>
+      <span id="gestureLabel">제스처 대기 중</span>
+    </div>
+
+    <!-- Text overlay -->
+    <div class="camera-text-overlay" id="cameraOverlay">
+      <div class="overlay-text" id="overlayTextEl">✨ 오늘도 빛나는 하루</div>
+    </div>
+
+    <!-- Countdown -->
+    <div class="countdown-overlay" id="countdownOverlay">
+      <div class="countdown-number" id="countNum">3</div>
+      <div class="countdown-label" id="countLabel">초 후 촬영</div>
+    </div>
+
+    <!-- Flash -->
+    <div class="flash" id="flashEl"></div>
+
+    <!-- Photo strip -->
+    <div class="photo-strip" id="photoStrip"></div>
+  </div>
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+
+    <!-- Gesture selection -->
+    <div class="sidebar-section">
+      <div class="section-label">촬영 제스처</div>
+      <div class="gesture-grid">
+        <div class="gesture-card active" onclick="selectGesture('peace', this)" data-gesture="peace">
+          <span class="gesture-icon">✌️</span>
+          <span class="gesture-name">피스 (V)</span>
+        </div>
+        <div class="gesture-card" onclick="selectGesture('thumbs_up', this)" data-gesture="thumbs_up">
+          <span class="gesture-icon">👍</span>
+          <span class="gesture-name">엄지척</span>
+        </div>
+        <div class="gesture-card" onclick="selectGesture('open_hand', this)" data-gesture="open_hand">
+          <span class="gesture-icon">🖐️</span>
+          <span class="gesture-name">손 펼치기</span>
+        </div>
+        <div class="gesture-card" onclick="selectGesture('fist', this)" data-gesture="fist">
+          <span class="gesture-icon">✊</span>
+          <span class="gesture-name">주먹</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Timer -->
+    <div class="sidebar-section">
+      <div class="section-label">타이머</div>
+      <div class="timer-row">
+        <div class="timer-btn active" onclick="selectTimer(0, this)">즉시</div>
+        <div class="timer-btn" onclick="selectTimer(3, this)">3초</div>
+        <div class="timer-btn" onclick="selectTimer(5, this)">5초</div>
+        <div class="timer-btn" onclick="selectTimer(10, this)">10초</div>
+      </div>
+    </div>
+
+    <!-- Text overlay -->
+    <div class="sidebar-section">
+      <div class="text-toggle-row">
+        <span style="font-size:0.85rem; color: var(--text);">문구 오버레이</span>
+        <div class="toggle-switch on" id="textToggle" onclick="toggleTextOverlay()"></div>
+      </div>
+
+      <div class="text-editor-area visible" id="textEditorArea">
+
+        <!-- Templates -->
+        <div class="section-label" style="margin-bottom:0.5rem;">템플릿</div>
+        <div class="templates-grid" id="templatesGrid">
+          <div class="template-item selected" onclick="selectTemplate(this, '✨ 오늘도 빛나는 하루')">
+            <span class="template-emoji">✨</span> 오늘도 빛나는 하루
+          </div>
+          <div class="template-item" onclick="selectTemplate(this, '🌸 행복한 순간')">
+            <span class="template-emoji">🌸</span> 행복한 순간
+          </div>
+          <div class="template-item" onclick="selectTemplate(this, '📍 2026. 03. 18')">
+            <span class="template-emoji">📍</span> 날짜 스탬프
+          </div>
+          <div class="template-item" onclick="selectTemplate(this, '우리 함께한\n이 순간을 기억해')">
+            <span class="template-emoji">💛</span> 소중한 순간
+          </div>
+          <div class="template-item" onclick="selectTemplate(this, 'SMILE :)')">
+            <span class="template-emoji">😊</span> SMILE
+          </div>
+          <div class="template-item" onclick="selectTemplate(this, 'MEMORIES\n2026')">
+            <span class="template-emoji">📷</span> 메모리즈
+          </div>
+        </div>
+
+        <!-- Custom text -->
+        <div class="section-label" style="margin-bottom:0.35rem;">직접 입력</div>
+        <textarea class="overlay-input" id="customText" placeholder="문구를 입력하세요..."
+          oninput="updateOverlayText(this.value)"></textarea>
+
+        <!-- Style & Position -->
+        <div class="controls-row">
+          <div>
+            <div class="mini-label">글씨 스타일</div>
+            <select class="mini-select" id="textStyle" onchange="updateTextStyle()">
+              <option value="">기본 Bold</option>
+              <option value="style-elegant">엘레강트</option>
+              <option value="style-bold">강조 Bold</option>
+              <option value="style-mono">모노스페이스</option>
+            </select>
+          </div>
+          <div>
+            <div class="mini-label">위치</div>
+            <select class="mini-select" id="textPosition" onchange="updateTextPosition()">
+              <option value="pos-bottom">하단</option>
+              <option value="pos-top">상단</option>
+              <option value="pos-center">중앙</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Start button -->
+    <button class="start-btn" id="startBtn" onclick="toggleDetection()">모션 감지 시작</button>
+
+  </aside>
+</div>
+
+<!-- Guide popup -->
+<div class="guide-popup" id="guidePopup">
+  <h3>// 사용 방법</h3>
+  <div class="guide-item"><span class="guide-num">01</span><span>카메라 시작 버튼을 누르면 웹캠이 활성화됩니다</span></div>
+  <div class="guide-item"><span class="guide-num">02</span><span>원하는 촬영 제스처와 타이머를 설정하세요</span></div>
+  <div class="guide-item"><span class="guide-num">03</span><span>문구 오버레이를 켜고 템플릿을 선택하거나 직접 입력하세요</span></div>
+  <div class="guide-item"><span class="guide-num">04</span><span>모션 감지 시작 후 카메라를 향해 제스처를 취하면 자동 촬영됩니다</span></div>
+  <div class="guide-item"><span class="guide-num">05</span><span>촬영된 사진은 하단 썸네일을 클릭하여 다운로드할 수 있습니다</span></div>
+  <button class="guide-close" onclick="document.querySelector('.guide-popup').classList.remove('show')">닫기</button>
+</div>
+
+<!-- Hidden canvas for capture -->
+<canvas id="captureCanvas" style="display:none;"></canvas>
+
+<script>
+// ──────────────────────────────────────
+// STATE
+// ──────────────────────────────────────
+let stream = null;
+let detecting = false;
+let selectedGesture = 'peace';
+let timerSeconds = 0;
+let textOverlayEnabled = true;
+let currentOverlayText = '✨ 오늘도 빛나는 하루';
+let countdownTimer = null;
+let gestureHoldStart = null;
+let gestureHoldRequired = 1200; // ms to hold gesture before trigger
+let photos = [];
+let isCounting = false;
+let animFrame = null;
+
+const video = document.getElementById('videoEl');
+const overlayCanvas = document.getElementById('overlayCanvas');
+const ctx = overlayCanvas.getContext('2d');
+const countdownOverlay = document.getElementById('countdownOverlay');
+const countNum = document.getElementById('countNum');
+const countLabel = document.getElementById('countLabel');
+const flashEl = document.getElementById('flashEl');
+const gestureStatus = document.getElementById('gestureStatus');
+const gestureLabel = document.getElementById('gestureLabel');
+const cameraOverlay = document.getElementById('cameraOverlay');
+const overlayTextEl = document.getElementById('overlayTextEl');
+const startBtn = document.getElementById('startBtn');
+const permScreen = document.getElementById('permScreen');
+
+// ──────────────────────────────────────
+// CAMERA
+// ──────────────────────────────────────
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    permScreen.classList.add('hidden');
+    resizeCanvas();
+  } catch(e) {
+    permScreen.querySelector('.perm-text').textContent = '카메라 접근 실패: ' + e.message;
+  }
+}
+
+function resizeCanvas() {
+  const rect = video.getBoundingClientRect();
+  overlayCanvas.width = rect.width || 640;
+  overlayCanvas.height = rect.height || 480;
+}
+window.addEventListener('resize', resizeCanvas);
+video.addEventListener('loadedmetadata', resizeCanvas);
+
+// ──────────────────────────────────────
+// GESTURE SELECTION
+// ──────────────────────────────────────
+function selectGesture(g, el) {
+  selectedGesture = g;
+  document.querySelectorAll('.gesture-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function selectTimer(t, el) {
+  timerSeconds = t;
+  document.querySelectorAll('.timer-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// ──────────────────────────────────────
+// TEXT OVERLAY
+// ──────────────────────────────────────
+function toggleTextOverlay() {
+  textOverlayEnabled = !textOverlayEnabled;
+  const toggle = document.getElementById('textToggle');
+  const area = document.getElementById('textEditorArea');
+  toggle.classList.toggle('on', textOverlayEnabled);
+  area.classList.toggle('visible', textOverlayEnabled);
+  if (textOverlayEnabled) {
+    cameraOverlay.classList.add('visible');
+  } else {
+    cameraOverlay.classList.remove('visible');
+  }
+}
+
+function selectTemplate(el, text) {
+  document.querySelectorAll('.template-item').forEach(t => t.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('customText').value = '';
+  updateOverlayText(text);
+}
+
+function updateOverlayText(text) {
+  currentOverlayText = text;
+  overlayTextEl.textContent = text;
+  if (textOverlayEnabled) cameraOverlay.classList.add('visible');
+}
+
+function updateTextStyle() {
+  const style = document.getElementById('textStyle').value;
+  overlayTextEl.className = 'overlay-text' + (style ? ' ' + style : '');
+}
+
+function updateTextPosition() {
+  const pos = document.getElementById('textPosition').value;
+  cameraOverlay.className = 'camera-text-overlay visible ' + pos;
+}
+
+// ──────────────────────────────────────
+// DETECTION TOGGLE
+// ──────────────────────────────────────
+function toggleDetection() {
+  if (!stream) { startCamera().then(() => { setTimeout(toggleDetection, 800); }); return; }
+  detecting = !detecting;
+  if (detecting) {
+    startBtn.textContent = '감지 중지';
+    startBtn.classList.add('running');
+    setGestureStatus('감지 중...', false);
+    runDetectionLoop();
+  } else {
+    startBtn.textContent = '모션 감지 시작';
+    startBtn.classList.remove('running');
+    setGestureStatus('제스처 대기 중', false);
+    cancelAnimationFrame(animFrame);
+    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    gestureHoldStart = null;
+    if (isCounting) cancelCountdown();
+  }
+}
+
+// ──────────────────────────────────────
+// SIMPLE MOTION / GESTURE DETECTION
+// (No external library — pixel-diff based)
+// ──────────────────────────────────────
+let prevImageData = null;
+let motionLevel = 0;
+let stableFrames = 0;
+let gesturePhase = 'idle'; // idle → motion_detected → holding → triggered
+
+// Each gesture has a different "signature" we detect via simple heuristics
+// Since we can't use MediaPipe without internet, we use motion + brightness patterns
+let frameCount = 0;
+const MOTION_THRESHOLD = 25;
+const HOLD_FRAMES = 18; // ~0.5s at 30fps
+
+function runDetectionLoop() {
+  if (!detecting) return;
+  animFrame = requestAnimationFrame(runDetectionLoop);
+
+  if (video.readyState < 2) return;
+  frameCount++;
+  if (frameCount % 2 !== 0) return; // process every 2nd frame
+
+  resizeCanvas();
+  const w = overlayCanvas.width;
+  const h = overlayCanvas.height;
+  if (w === 0 || h === 0) return;
+
+  // Draw video frame to hidden canvas
+  const cap = document.getElementById('captureCanvas');
+  cap.width = w; cap.height = h;
+  const cctx = cap.getContext('2d');
+  cctx.save();
+  cctx.scale(-1, 1);
+  cctx.drawImage(video, -w, 0, w, h);
+  cctx.restore();
+
+  const imageData = cctx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+
+  if (!prevImageData) { prevImageData = imageData; return; }
+
+  // ── Compute motion in center-top region (where hands usually appear) ──
+  let diff = 0;
+  const sampleStep = 6;
+  const regionX1 = Math.floor(w * 0.1), regionX2 = Math.floor(w * 0.9);
+  const regionY1 = Math.floor(h * 0.05), regionY2 = Math.floor(h * 0.65);
+  let samples = 0;
+
+  for (let y = regionY1; y < regionY2; y += sampleStep) {
+    for (let x = regionX1; x < regionX2; x += sampleStep) {
+      const i = (y * w + x) * 4;
+      const dr = Math.abs(data[i] - prevImageData.data[i]);
+      const dg = Math.abs(data[i+1] - prevImageData.data[i+1]);
+      const db = Math.abs(data[i+2] - prevImageData.data[i+2]);
+      if ((dr + dg + db) / 3 > MOTION_THRESHOLD) diff++;
+      samples++;
+    }
+  }
+
+  const motionPct = (diff / samples) * 100;
+  prevImageData = imageData;
+
+  // Draw motion heatmap overlay (subtle)
+  ctx.clearRect(0, 0, w, h);
+
+  // ── Gesture detection state machine ──
+  if (!isCounting) {
+    const gestureDetected = checkGesture(motionPct, data, w, h);
+
+    if (gestureDetected) {
+      if (gesturePhase === 'idle') {
+        gesturePhase = 'holding';
+        gestureHoldStart = Date.now();
+        stableFrames = 0;
+      } else if (gesturePhase === 'holding') {
+        stableFrames++;
+        const held = Date.now() - gestureHoldStart;
+        const progress = Math.min(held / gestureHoldRequired, 1);
+
+        // Draw circular progress
+        const cx2 = w * 0.5, cy2 = h * 0.35;
+        ctx.beginPath();
+        ctx.arc(cx2, cy2, 36, -Math.PI/2, -Math.PI/2 + progress * Math.PI * 2);
+        ctx.strokeStyle = '#e8ff47';
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(cx2, cy2, 36, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        setGestureStatus(getGestureName(selectedGesture) + ' 감지됨!', true);
+
+        if (held >= gestureHoldRequired) {
+          gesturePhase = 'triggered';
+          triggerShot();
+        }
+      }
+    } else {
+      if (gesturePhase !== 'idle' && gesturePhase !== 'triggered') {
+        gesturePhase = 'idle';
+        gestureHoldStart = null;
+        setGestureStatus('감지 중...', false);
+      }
+    }
+  }
+}
+
+function checkGesture(motionPct, data, w, h) {
+  // Heuristic: significant but not excessive motion in upper region
+  // Different gestures → different motion thresholds
+  const thresholds = {
+    peace: { min: 1.2, max: 22 },
+    thumbs_up: { min: 1.0, max: 20 },
+    open_hand: { min: 2.0, max: 30 },
+    fist: { min: 0.8, max: 18 }
+  };
+  const t = thresholds[selectedGesture] || { min: 1, max: 25 };
+
+  // Check brightness / skin tone presence in upper region
+  let skinPixels = 0;
+  let totalSampled = 0;
+  const step = 8;
+  for (let y = Math.floor(h * 0.05); y < Math.floor(h * 0.55); y += step) {
+    for (let x = Math.floor(w * 0.15); x < Math.floor(w * 0.85); x += step) {
+      const i = (y * w + x) * 4;
+      const r = data[i], g = data[i+1], b = data[i+2];
+      if (isSkinTone(r, g, b)) skinPixels++;
+      totalSampled++;
+    }
+  }
+  const skinRatio = skinPixels / totalSampled;
+
+  return motionPct >= t.min && motionPct <= t.max && skinRatio > 0.04;
+}
+
+function isSkinTone(r, g, b) {
+  return r > 90 && g > 55 && b > 30 &&
+         r > g && r > b &&
+         Math.abs(r - g) > 12 &&
+         r - Math.min(g, b) > 15;
+}
+
+function getGestureName(g) {
+  const names = { peace: '✌️ 피스', thumbs_up: '👍 엄지척', open_hand: '🖐 손 펼치기', fist: '✊ 주먹' };
+  return names[g] || g;
+}
+
+function setGestureStatus(text, active) {
+  gestureLabel.textContent = text;
+  gestureStatus.classList.toggle('detected', active);
+}
+
+// ──────────────────────────────────────
+// TRIGGER SHOT + COUNTDOWN
+// ──────────────────────────────────────
+function triggerShot() {
+  isCounting = true;
+  gesturePhase = 'idle';
+  ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+  if (timerSeconds === 0) {
+    capturePhoto();
+  } else {
+    let remaining = timerSeconds;
+    countdownOverlay.classList.add('active');
+    countNum.textContent = remaining;
+    countLabel.textContent = '초 후 촬영';
+
+    countdownTimer = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(countdownTimer);
+        countdownOverlay.classList.remove('active');
+        capturePhoto();
+      } else {
+        countNum.style.animation = 'none';
+        countNum.offsetHeight;
+        countNum.style.animation = 'countPulse 0.8s ease-out';
+        countNum.textContent = remaining;
+      }
+    }, 1000);
+  }
+}
+
+function cancelCountdown() {
+  clearInterval(countdownTimer);
+  countdownOverlay.classList.remove('active');
+  isCounting = false;
+  gesturePhase = 'idle';
+}
+
+// ──────────────────────────────────────
+// CAPTURE
+// ──────────────────────────────────────
+function capturePhoto() {
+  const cap = document.getElementById('captureCanvas');
+  const cctx = cap.getContext('2d');
+  const w = cap.width = video.videoWidth || 640;
+  const h = cap.height = video.videoHeight || 480;
+
+  // Mirror
+  cctx.save();
+  cctx.scale(-1, 1);
+  cctx.drawImage(video, -w, 0, w, h);
+  cctx.restore();
+
+  // Draw text overlay if enabled
+  if (textOverlayEnabled && currentOverlayText) {
+    const pos = document.getElementById('textPosition').value || 'pos-bottom';
+    const style = document.getElementById('textStyle').value;
+
+    // Gradient bg
+    let grdY1, grdY2;
+    if (pos === 'pos-top') { grdY1 = 0; grdY2 = h * 0.35; }
+    else if (pos === 'pos-center') { grdY1 = h * 0.35; grdY2 = h * 0.65; }
+    else { grdY1 = h * 0.65; grdY2 = h; }
+
+    if (pos !== 'pos-center') {
+      const grd = cctx.createLinearGradient(0, grdY1, 0, grdY2);
+      if (pos === 'pos-top') { grd.addColorStop(0, 'rgba(0,0,0,0.65)'); grd.addColorStop(1, 'rgba(0,0,0,0)'); }
+      else { grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(1, 'rgba(0,0,0,0.65)'); }
+      cctx.fillStyle = grd;
+      cctx.fillRect(0, 0, w, h);
+    }
+
+    // Text
+    let fontSize = Math.floor(w * 0.055);
+    let fontStr;
+    if (style === 'style-elegant') fontStr = `italic ${fontSize}px 'Playfair Display', Georgia, serif`;
+    else if (style === 'style-bold') { fontStr = `900 ${Math.floor(fontSize * 1.1)}px 'Pretendard', sans-serif`; }
+    else if (style === 'style-mono') { fontSize = Math.floor(w * 0.038); fontStr = `700 ${fontSize}px 'Space Mono', monospace`; }
+    else fontStr = `700 ${fontSize}px 'Pretendard', sans-serif`;
+
+    cctx.font = fontStr;
+    cctx.textAlign = 'center';
+    cctx.fillStyle = '#ffffff';
+    cctx.shadowColor = 'rgba(0,0,0,0.6)';
+    cctx.shadowBlur = 8;
+
+    const lines = currentOverlayText.split('\n');
+    const lineH = fontSize * 1.35;
+    let startY;
+    if (pos === 'pos-top') startY = fontSize + 30;
+    else if (pos === 'pos-center') startY = h / 2 - (lines.length - 1) * lineH / 2;
+    else startY = h - 50 - (lines.length - 1) * lineH;
+
+    lines.forEach((line, i) => {
+      cctx.fillText(line, w / 2, startY + i * lineH);
+    });
+    cctx.shadowBlur = 0;
+  }
+
+  // Flash
+  flashEl.classList.remove('shoot');
+  flashEl.offsetHeight;
+  flashEl.classList.add('shoot');
+
+  // Shutter sound (beep)
+  playShutterBeep();
+
+  // Save thumbnail
+  const dataURL = cap.toDataURL('image/jpeg', 0.92);
+  addThumbnail(dataURL);
+
+  isCounting = false;
+  gesturePhase = 'idle';
+  setGestureStatus('감지 중...', false);
+}
+
+function playShutterBeep() {
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.frequency.value = 1200;
+    gain.gain.setValueAtTime(0.3, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.18);
+    osc.start(); osc.stop(ac.currentTime + 0.18);
+  } catch(e) {}
+}
+
+function addThumbnail(dataURL) {
+  photos.unshift(dataURL);
+  const strip = document.getElementById('photoStrip');
+  const img = document.createElement('img');
+  img.className = 'photo-thumb';
+  img.src = dataURL;
+  img.title = '클릭하여 다운로드';
+  img.style.pointerEvents = 'all';
+  img.onclick = () => downloadPhoto(dataURL, `motion_cam_${Date.now()}.jpg`);
+  strip.insertBefore(img, strip.firstChild);
+  // Keep max 5 thumbs visible
+  while (strip.children.length > 5) strip.removeChild(strip.lastChild);
+}
+
+function downloadPhoto(dataURL, filename) {
+  const a = document.createElement('a');
+  a.href = dataURL;
+  a.download = filename;
+  a.click();
+}
+
+// ──────────────────────────────────────
+// DATE TEMPLATE AUTO-UPDATE
+// ──────────────────────────────────────
+const today = new Date();
+const dateStr = `📍 ${today.getFullYear()}. ${String(today.getMonth()+1).padStart(2,'0')}. ${String(today.getDate()).padStart(2,'0')}`;
+document.querySelectorAll('.template-item').forEach(item => {
+  if (item.textContent.includes('날짜')) {
+    item.dataset.text = dateStr;
+    item.onclick = function() { selectTemplate(this, dateStr); };
+  }
+});
+
+// Auto-start camera
+startCamera();
+</script>
+</body>
+</html>
