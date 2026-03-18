@@ -742,19 +742,20 @@ function dist2D(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-// 손가락 펼침 여부 (tip이 pip보다 화면 위쪽이면 펴짐)
-function extended(lm, tip, pip) {
-  return lm[tip].y < lm[pip].y;
+// 손가락 펼침: tip.y < mcp.y (화면 위가 y=0이므로 tip이 mcp보다 위에 있으면 펴짐)
+// MCP 기준이 PIP보다 훨씬 안정적
+function extended(lm, tip, mcp) {
+  return lm[tip].y < lm[mcp].y - 0.02; // 0.02 margin으로 노이즈 제거
 }
 
 // ── 제스처 판별 ──
 function classifyGesture(lm) {
-  const iExt = extended(lm, LM.INDEX_TIP,  LM.INDEX_PIP);
-  const mExt = extended(lm, LM.MIDDLE_TIP, LM.MIDDLE_PIP);
-  const rExt = extended(lm, LM.RING_TIP,   LM.RING_PIP);
-  const pExt = extended(lm, LM.PINKY_TIP,  LM.PINKY_PIP);
-  // 엄지: tip이 ip보다 손목 쪽(y가 크거나) 옆으로 벗어나 있으면 펴진 것
-  const tExt = lm[LM.THUMB_TIP].y < lm[LM.THUMB_MCP].y;
+  const iExt = extended(lm, LM.INDEX_TIP,  LM.INDEX_MCP);
+  const mExt = extended(lm, LM.MIDDLE_TIP, LM.MIDDLE_MCP);
+  const rExt = extended(lm, LM.RING_TIP,   LM.RING_MCP);
+  const pExt = extended(lm, LM.PINKY_TIP,  LM.PINKY_MCP);
+  // 엄지: tip이 CMC(손목 쪽 관절)보다 위에 있으면 펴진 것
+  const tExt = lm[LM.THUMB_TIP].y < lm[LM.THUMB_CMC].y;
 
   switch (selectedGesture) {
     case 'peace':
@@ -762,28 +763,26 @@ function classifyGesture(lm) {
       return iExt && mExt && !rExt && !pExt;
 
     case 'thumbs_up':
-      // 엄지만 위로, 나머지 모두 접음
+      // 엄지만 펴고, 나머지 4개 접음
       return tExt && !iExt && !mExt && !rExt && !pExt;
 
     case 'open_hand':
-      // 다섯 손가락 모두 펴짐
+      // 4개 손가락 모두 펴짐 (엄지 무관)
       return iExt && mExt && rExt && pExt;
 
     case 'fist':
-      // 모든 손가락 접힘
-      return !iExt && !mExt && !rExt && !pExt && !tExt;
+      // 4개 손가락 모두 접힘
+      return !iExt && !mExt && !rExt && !pExt;
 
     case 'finger_heart': {
-      // 엄지 끝과 검지 끝이 가까이 맞닿음
-      // 나머지 손가락(중지·약지·새끼)은 접혀 있어야 함
+      // 엄지 끝 ↔ 검지 끝 거리가 손 크기의 45% 이하
       const d = dist2D(lm[LM.THUMB_TIP], lm[LM.INDEX_TIP]);
       const handSize = dist2D(lm[LM.WRIST], lm[LM.MIDDLE_MCP]);
-      const touching = d < handSize * 0.40;
-      return touching && !mExt && !rExt && !pExt;
+      return d < handSize * 0.45;
     }
 
     case 'big_heart':
-      // 단일 손 fallback: 오픈핸드 (양손 판별은 multiLandmarks에서)
+      // 단일 손일 때는 오픈핸드로 fallback
       return iExt && mExt && rExt && pExt;
 
     default:
@@ -791,13 +790,12 @@ function classifyGesture(lm) {
   }
 }
 
-// 큰 하트: 양손 검지 끝이 서로 가까이 닿는지
+// 큰 하트: 양손 엄지 끝이 가까이 닿거나, 검지 끝이 가까울 때
 function isBigHeart(multiLm) {
   if (multiLm.length < 2) return false;
-  const a = multiLm[0][LM.INDEX_TIP];
-  const b = multiLm[1][LM.INDEX_TIP];
-  // 정규화 좌표(0~1)에서 0.15 이내
-  return dist2D(a, b) < 0.18;
+  const thumbDist = dist2D(multiLm[0][LM.THUMB_TIP], multiLm[1][LM.THUMB_TIP]);
+  const indexDist = dist2D(multiLm[0][LM.INDEX_TIP], multiLm[1][LM.INDEX_TIP]);
+  return thumbDist < 0.20 || indexDist < 0.20;
 }
 
 // ── MediaPipe 결과 콜백 ──
@@ -813,22 +811,19 @@ function onHandResults(results) {
     if (gesturePhase === 'holding') {
       gesturePhase = 'idle';
       gestureHoldStart = null;
-      setGestureStatus('감지 중...', false);
+      setGestureStatus('손을 카메라에 보여주세요', false);
     }
     return;
   }
 
   // 스켈레톤 그리기
   multiLm.forEach(lm => {
-    drawConnectors(ctx, lm,
-      HAND_CONNECTIONS,
-      { color: 'rgba(232,255,71,0.5)', lineWidth: 2 }
-    );
+    drawConnectors(ctx, lm, HAND_CONNECTIONS,
+      { color: 'rgba(232,255,71,0.55)', lineWidth: 2 });
     drawLandmarks(ctx, lm, {
-      color: 'rgba(255,255,255,0.85)',
-      fillColor: 'rgba(232,255,71,0.7)',
-      lineWidth: 1,
-      radius: 3
+      color: 'rgba(255,255,255,0.9)',
+      fillColor: 'rgba(232,255,71,0.8)',
+      lineWidth: 1, radius: 3
     });
   });
 
@@ -840,15 +835,25 @@ function onHandResults(results) {
     detected = classifyGesture(multiLm[0]);
   }
 
+  // 디버그: 현재 제스처 상태를 캔버스에 표시
+  ctx.save();
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = detected ? '#e8ff47' : 'rgba(255,255,255,0.5)';
+  ctx.fillText(detected ? '✓ ' + getGestureName(selectedGesture) : '제스처를 취하세요', 12, h - 14);
+  ctx.restore();
+
   if (detected) {
-    if (gesturePhase === 'idle') {
+    if (gesturePhase === 'idle' || gesturePhase === 'triggered') {
+      // triggered 상태도 idle로 리셋해서 재인식 허용
+      if (gesturePhase === 'triggered') return; // 촬영 중엔 skip
       gesturePhase = 'holding';
       gestureHoldStart = Date.now();
     } else if (gesturePhase === 'holding') {
       const held = Date.now() - gestureHoldStart;
       const progress = Math.min(held / gestureHoldRequired, 1);
       drawProgress(w, h, progress, multiLm[0]);
-      setGestureStatus(getGestureName(selectedGesture) + ' 감지됨!', true);
+      setGestureStatus(getGestureName(selectedGesture) + ' — 유지하세요!', true);
       if (held >= gestureHoldRequired) {
         gesturePhase = 'triggered';
         triggerShot();
@@ -1110,7 +1115,8 @@ function capturePhoto() {
   addThumbnail(dataURL);
 
   isCounting = false;
-  gesturePhase = 'idle';
+  gesturePhase = 'idle';  // 촬영 후 idle로 복귀 → 다음 제스처 인식 가능
+  gestureHoldStart = null;
   setGestureStatus('감지 중...', false);
 }
 
