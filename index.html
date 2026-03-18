@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>모션 카메라</title>
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
@@ -175,10 +175,14 @@ textarea.ovinput:focus{border-color:rgba(232,255,71,.4)}
       <div class="perm-text">카메라 접근 권한이 필요합니다</div>
       <button class="perm-btn" onclick="startCamera()">카메라 시작</button>
     </div>
+
     <video id="videoEl" autoplay muted playsinline></video>
     <canvas id="overlayCanvas"></canvas>
 
-    <div class="gpill" id="gpill"><div class="dot"></div><span id="gpillTxt">초기화 중...</span></div>
+    <div class="gpill" id="gpill">
+      <div class="dot"></div>
+      <span id="gpillTxt">초기화 중...</span>
+    </div>
 
     <div class="cam-text visible" id="camText">
       <div class="ov-txt" id="ovTxt">✨ 오늘도 빛나는 하루</div>
@@ -191,7 +195,6 @@ textarea.ovinput:focus{border-color:rgba(232,255,71,.4)}
 
     <div class="flash" id="flashEl"></div>
 
-    <!-- 촬영 사진 스트립 -->
     <div class="photo-strip" id="photoStrip"></div>
   </div>
 
@@ -238,13 +241,31 @@ textarea.ovinput:focus{border-color:rgba(232,255,71,.4)}
         <div class="sl" style="margin-bottom:.3rem;margin-top:.2rem;">직접 입력</div>
         <textarea class="ovinput" id="customTxt" placeholder="문구를 입력하세요..." oninput="setOvTxt(this.value)"></textarea>
         <div class="crow">
-          <div><div class="mlabel">스타일</div><select class="msel" id="txStyle" onchange="applyStyle()"><option value="">기본 Bold</option><option value="style-elegant">엘레강트</option><option value="style-bold">강조 Bold</option><option value="style-mono">모노스페이스</option></select></div>
-          <div><div class="mlabel">위치</div><select class="msel" id="txPos" onchange="applyPos()"><option value="">하단</option><option value="pos-top">상단</option><option value="pos-center">중앙</option></select></div>
+          <div>
+            <div class="mlabel">스타일</div>
+            <select class="msel" id="txStyle" onchange="applyStyle()">
+              <option value="">기본 Bold</option>
+              <option value="style-elegant">엘레강트</option>
+              <option value="style-bold">강조 Bold</option>
+              <option value="style-mono">모노스페이스</option>
+            </select>
+          </div>
+          <div>
+            <div class="mlabel">위치</div>
+            <select class="msel" id="txPos" onchange="applyPos()">
+              <option value="">하단</option>
+              <option value="pos-top">상단</option>
+              <option value="pos-center">중앙</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="sbar"><div class="sdot" id="sdot"></div><span class="stxt" id="stxt">카메라 초기화 중...</span></div>
+    <div class="sbar">
+      <div class="sdot" id="sdot"></div>
+      <span class="stxt" id="stxt">카메라 초기화 중...</span>
+    </div>
 
   </aside>
 </div>
@@ -268,7 +289,8 @@ textarea.ovinput:focus{border-color:rgba(232,255,71,.4)}
       <span class="mtitle">// 사진 전송</span>
       <button class="mclose" onclick="closeModal()">✕</button>
     </div>
-    <img id="mprev" class="mprev" src="" alt="사진 미리보기" />
+    <img id="mprev" class="mprev" src="" alt="사진 미리보기">
+
     <div class="mtabs">
       <button class="mtab active" onclick="switchTab('email',this)">📧 이메일</button>
       <button class="mtab" onclick="switchTab('sms',this)">💬 문자 (메세지미)</button>
@@ -276,16 +298,22 @@ textarea.ovinput:focus{border-color:rgba(232,255,71,.4)}
 
     <!-- 이메일 패널 -->
     <div class="mpanel active" id="panel-email">
-      <label class="flabel">받는 사람 이메일</label>
-      <input class="finput" id="emailTo" type="email" placeholder="example@email.com" />
+      <label class="flabel">참조(CC) 이메일 (선택)</label>
+      <input class="finput" id="emailTo" type="email" placeholder="example@email.com">
+
       <label class="flabel">제목</label>
-      <input class="finput" id="emailSubj" type="text" value="📷 모션캠 사진 전송" />
+      <input class="finput" id="emailSubj" type="text" value="📷 모션캠 사진 전송">
+
       <label class="flabel">메시지</label>
-      <input class="finput" id="emailBody" type="text" value="안녕하세요! 모션캠에서 촬영한 사진입니다 :)" />
+      <input class="finput" id="emailBody" type="text" value="안녕하세요! 모션캠에서 촬영한 사진입니다 :)">
+
       <button class="sendbtn" onclick="doEmail()">✉️ 이메일 보내기</button>
+
       <div class="fnote">
-        📧 지원 브라우저에서는 공유창이 열리고, 메일 앱으로 사진을 넘길 수 있습니다.<br>
-        지원하지 않는 환경에서는 첨부사진이 포함된 메일 초안(.eml)을 다운로드합니다.
+        📧 로그인 없이 웹에서 메일 전송을 요청합니다.<br>
+        사진은 첨부파일로 함께 전송됩니다.<br>
+        <b>실제 주 수신자 주소는 JS 코드의 <code>FORM_ENDPOINT</code> 에 설정된 메일</b>입니다.<br>
+        위 입력칸은 선택적으로 참조(CC) 주소를 추가할 때만 사용됩니다.
       </div>
       <div class="fres" id="emailRes"></div>
     </div>
@@ -293,14 +321,19 @@ textarea.ovinput:focus{border-color:rgba(232,255,71,.4)}
     <!-- 문자 패널 -->
     <div class="mpanel" id="panel-sms">
       <label class="flabel">메세지미 API Key</label>
-      <input class="finput" id="smsKey" type="text" />
+      <input class="finput" id="smsKey" type="text">
+
       <label class="flabel">발신 번호 (인증된 번호)</label>
-      <input class="finput" id="smsFrom" type="tel" placeholder="01077914290" />
+      <input class="finput" id="smsFrom" type="tel" placeholder="01077914290">
+
       <label class="flabel">수신 번호</label>
-      <input class="finput" id="smsTo" type="tel" placeholder="01012345678" />
+      <input class="finput" id="smsTo" type="tel" placeholder="01012345678">
+
       <label class="flabel">메시지 내용</label>
-      <input class="finput" id="smsMsg" type="text" placeholder="안녕하세요! 사진을 보내드립니다 😊" />
+      <input class="finput" id="smsMsg" type="text" placeholder="안녕하세요! 사진을 보내드립니다 😊">
+
       <button class="sendbtn" id="smsSendBtn" onclick="doSMS()">💬 문자 보내기</button>
+
       <div class="fnote">
         📡 메세지미 API를 통해 문자를 발송합니다.<br>
         브라우저 CORS 정책으로 직접 호출이 차단될 수 있으며, 이 경우 서버 프록시가 필요합니다.
@@ -326,6 +359,9 @@ let cdTimer=null, counting=false;
 let phase='idle', holdStart=null, foundG=null;
 const HOLD=1500;
 let shareURL=null;
+
+// ★ 여기만 본인 수신 메일로 바꾸면 됨
+const FORM_ENDPOINT = 'https://formsubmit.co/ajax/nsa03573@naver.com';
 
 const video=document.getElementById('videoEl');
 const cvs=document.getElementById('overlayCanvas');
@@ -383,7 +419,7 @@ function initMP(){
     minDetectionConfidence:.7,
     minTrackingConfidence:.6
   });
-  mpHands.onResults(r=>{lastResults=r;});
+  mpHands.onResults(r=>{ lastResults=r; });
   mpHands.initialize().then(()=>{
     mpReady=true;
     setSt('자동 감지 중 — 제스처를 취하세요',true);
@@ -401,6 +437,7 @@ const LM={
   RING_MCP:13,RING_PIP:14,RING_DIP:15,RING_TIP:16,
   PINKY_MCP:17,PINKY_PIP:18,PINKY_DIP:19,PINKY_TIP:20
 };
+
 const d2=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 const isUp=(lm,tip,mcp)=>lm[tip].y<lm[mcp].y-0.03;
 
@@ -410,6 +447,7 @@ function classifyAll(lm){
   const r=isUp(lm,LM.RING_TIP,LM.RING_MCP);
   const p=isUp(lm,LM.PINKY_TIP,LM.PINKY_MCP);
   const t=lm[LM.THUMB_TIP].y<lm[LM.THUMB_IP].y-0.02;
+
   return{
     peace:i&&m&&!r&&!p,
     thumbs_up:t&&!i&&!m&&!r&&!p,
@@ -422,10 +460,10 @@ function classifyAll(lm){
     big_heart:false
   };
 }
+
 function isBigHeart(ml){
   if(ml.length<2)return false;
-  return d2(ml[0][LM.THUMB_TIP],ml[1][LM.THUMB_TIP])<.22 ||
-         d2(ml[0][LM.INDEX_TIP],ml[1][LM.INDEX_TIP])<.22;
+  return d2(ml[0][LM.THUMB_TIP],ml[1][LM.THUMB_TIP])<.22 || d2(ml[0][LM.INDEX_TIP],ml[1][LM.INDEX_TIP])<.22;
 }
 
 // ══════════════════════════
@@ -501,6 +539,7 @@ function drawProg(prog,lm){
   ctx.fillText(Math.round(prog*100)+'%',0,isH?52:4);
   ctx.restore();
 }
+
 function hp(c,s){
   c.moveTo(0,-s*.2);
   c.bezierCurveTo(0,-s*.7,-s,-s*.7,-s,-s*.1);
@@ -519,7 +558,7 @@ async function loop(){
   const now=Date.now();
   if(now-lastSend>33){
     lastSend=now;
-    try{await mpHands.send({image:video});}catch(e){}
+    try{ await mpHands.send({image:video}); }catch(e){}
   }
 
   const res=lastResults;
@@ -532,6 +571,7 @@ async function loop(){
       foundG=null;
       setPill('제스처를 취하세요',false);
     }
+
     if(!res?.multiHandLandmarks?.length&&!counting){
       ctx.save();
       ctx.font='12px monospace';
@@ -574,7 +614,8 @@ async function loop(){
         foundG=null;
         return;
       }
-      const held=now-holdStart,prog=Math.min(held/HOLD,1);
+      const held=now-holdStart;
+      const prog=Math.min(held/HOLD,1);
       drawProg(prog,multi[0]);
       setPill(`${gn(found)} — 유지 중...`,true);
       if(held>=HOLD){
@@ -608,11 +649,13 @@ function toggleG(g,el){
   holdStart=null;
   foundG=null;
 }
+
 function setTimer(t,el){
   timerSec=t;
   document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
 }
+
 function gn(g){
   return{
     peace:'✌️ 피스',
@@ -623,10 +666,12 @@ function gn(g){
     big_heart:'🫶 큰 하트'
   }[g]||g;
 }
+
 function setPill(t,on){
   gpillTxt.textContent=t;
   gpill.classList.toggle('on',on);
 }
+
 function setSt(t,on){
   stxt.textContent=t;
   sdot.classList.toggle('on',on);
@@ -641,21 +686,25 @@ function toggleOv(){
   document.getElementById('txArea').classList.toggle('open',ovOn);
   camText.classList.toggle('visible',ovOn);
 }
+
 function pickTpl(el,txt){
   document.querySelectorAll('.tpl').forEach(t=>t.classList.remove('sel'));
   el.classList.add('sel');
   document.getElementById('customTxt').value='';
   setOvTxt(txt);
 }
+
 function setOvTxt(txt){
   ovTxtVal=txt;
   ovTxtEl.textContent=txt;
   if(ovOn)camText.classList.add('visible');
 }
+
 function applyStyle(){
   const s=document.getElementById('txStyle').value;
   ovTxtEl.className='ov-txt'+(s?' '+s:'');
 }
+
 function applyPos(){
   const p=document.getElementById('txPos').value;
   camText.className='cam-text visible'+(p?' '+p:'');
@@ -670,6 +719,7 @@ function triggerShot(){
     capture();
     return;
   }
+
   let rem=timerSec;
   countdown.classList.add('active');
   cdNum.textContent=rem;
@@ -708,7 +758,8 @@ function capture(){
   if(ovOn&&ovTxtVal){
     const pos=document.getElementById('txPos').value||'';
     const sty=document.getElementById('txStyle').value;
-    const isTop=pos==='pos-top',isCenter=pos==='pos-center';
+    const isTop=pos==='pos-top';
+    const isCenter=pos==='pos-center';
 
     if(!isCenter){
       const g=cc.createLinearGradient(0,isTop?0:vh*.65,0,isTop?vh*.35:vh);
@@ -724,7 +775,9 @@ function capture(){
     else if(sty==='style-mono'){
       fs=Math.floor(vw*.038);
       font=`700 ${fs}px 'Space Mono',monospace`;
-    }else font=`700 ${fs}px 'Pretendard',sans-serif`;
+    }else{
+      font=`700 ${fs}px 'Pretendard',sans-serif`;
+    }
 
     cc.font=font;
     cc.textAlign='center';
@@ -732,8 +785,10 @@ function capture(){
     cc.shadowColor='rgba(0,0,0,.6)';
     cc.shadowBlur=8;
 
-    const lines=ovTxtVal.split('\n'),lh=fs*1.35;
+    const lines=ovTxtVal.split('\n');
+    const lh=fs*1.35;
     let sy=isTop?fs+30:isCenter?vh/2-(lines.length-1)*lh/2:vh-50-(lines.length-1)*lh;
+
     lines.forEach((ln,i)=>cc.fillText(ln,vw/2,sy+i*lh));
     cc.shadowBlur=0;
   }
@@ -758,7 +813,8 @@ function capture(){
 function beep(){
   try{
     const ac=new(window.AudioContext||window.webkitAudioContext)();
-    const o=ac.createOscillator(),g=ac.createGain();
+    const o=ac.createOscillator();
+    const g=ac.createGain();
     o.connect(g);
     g.connect(ac.destination);
     o.frequency.value=1200;
@@ -806,7 +862,9 @@ function addThumb(url){
   wrap.appendChild(lbl);
   strip.insertBefore(wrap,strip.firstChild);
 
-  while(strip.children.length>5)strip.removeChild(strip.lastChild);
+  while(strip.children.length>5){
+    strip.removeChild(strip.lastChild);
+  }
 }
 
 // ══════════════════════════
@@ -819,9 +877,11 @@ function openModal(url){
   document.getElementById('smsRes').textContent='';
   document.getElementById('mbg').classList.add('open');
 }
+
 function closeModal(){
   document.getElementById('mbg').classList.remove('open');
 }
+
 function switchTab(tab,el){
   document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.mpanel').forEach(p=>p.classList.remove('active'));
@@ -834,7 +894,7 @@ function switchTab(tab,el){
 // ══════════════════════════
 function dataURLToFile(dataUrl, filename='motioncam.jpg'){
   const [header, base64] = dataUrl.split(',');
-  const mime = (header.match(/data:(.*?);base64/) || [])[1] || 'application/octet-stream';
+  const mime = (header.match(/data:(.*?);base64/) || [])[1] || 'image/jpeg';
   const bin = atob(base64);
   const len = bin.length;
   const u8 = new Uint8Array(len);
@@ -842,146 +902,73 @@ function dataURLToFile(dataUrl, filename='motioncam.jpg'){
   return new File([u8], filename, { type: mime });
 }
 
-function downloadBlob(blob, filename){
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
-}
-
-function splitBase64Lines(base64){
-  return base64.match(/.{1,76}/g)?.join('\r\n') || base64;
-}
-
-function utf8ToBase64(str){
-  const bytes = new TextEncoder().encode(str);
-  let binary = '';
-  bytes.forEach(b => binary += String.fromCharCode(b));
-  return btoa(binary);
-}
-
-function mimeWord(str){
-  return `=?UTF-8?B?${utf8ToBase64(str)}?=`;
-}
-
-function buildEml({ to, subject, body, dataUrl, filename }){
-  const boundary = `----=_MotionCam_${Date.now()}`;
-  const [header, base64] = dataUrl.split(',');
-  const mime = (header.match(/data:(.*?);base64/) || [])[1] || 'image/jpeg';
-  const safeBody = (body || '').replace(/\r?\n/g, '\r\n');
-
-  return [
-    `To: ${to}`,
-    `Subject: ${mimeWord(subject || '모션캠 사진 전송')}`,
-    'MIME-Version: 1.0',
-    `Content-Type: multipart/mixed; boundary="${boundary}"`,
-    '',
-    `--${boundary}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    'Content-Transfer-Encoding: 8bit',
-    '',
-    safeBody,
-    '',
-    `--${boundary}`,
-    `Content-Type: ${mime}; name="${filename}"`,
-    'Content-Transfer-Encoding: base64',
-    `Content-Disposition: attachment; filename="${filename}"`,
-    '',
-    splitBase64Lines(base64),
-    '',
-    `--${boundary}--`
-  ].join('\r\n');
-}
-
 // ══════════════════════════
-// EMAIL SEND
+// EMAIL SEND (FormSubmit)
 // ══════════════════════════
 async function doEmail(){
-  const to = document.getElementById('emailTo').value.trim();
+  const ccEmail = document.getElementById('emailTo').value.trim();
   const subj = document.getElementById('emailSubj').value.trim() || '📷 모션캠 사진 전송';
   const body = document.getElementById('emailBody').value.trim() || '안녕하세요! 모션캠에서 촬영한 사진입니다 :)';
   const btn = document.querySelector('#panel-email .sendbtn');
-
-  if(!to){
-    showRes('emailRes', '이메일 주소를 입력하세요', false);
-    return;
-  }
 
   if(!shareURL){
     showRes('emailRes', '전송할 사진이 없습니다', false);
     return;
   }
 
-  const filename = `motioncam_${Date.now()}.jpg`;
-  const imageFile = dataURLToFile(shareURL, filename);
+  if(FORM_ENDPOINT.includes('your@email.com')){
+    showRes('emailRes', '먼저 JS의 FORM_ENDPOINT를 실제 수신 메일 주소로 바꿔주세요.', false);
+    return;
+  }
 
   btn.disabled = true;
-  btn.textContent = '준비 중...';
+  btn.textContent = '전송 중...';
 
   try{
-    // 1) Web Share API 지원 시: 파일 첨부 공유
-    if(navigator.share && navigator.canShare && navigator.canShare({ files:[imageFile] })){
-      await navigator.share({
-        title: subj,
-        text: `${body}\n\n받는 사람: ${to}`,
-        files: [imageFile]
-      });
+    const filename = `motioncam_${Date.now()}.jpg`;
+    const imageFile = dataURLToFile(shareURL, filename);
 
-      showRes(
-        'emailRes',
-        '공유창이 열렸습니다. 메일 앱을 선택해 전송하세요. 일부 환경에서는 받는 사람 주소를 메일 앱에서 다시 확인해야 합니다.',
-        true
-      );
-      return;
+    const form = new FormData();
+    form.append('name', 'MotionCam');
+    form.append('message', body);
+    form.append('email', 'noreply@motioncam.local');
+    form.append('attachment', imageFile);   // ★ 사진 첨부
+    form.append('_subject', subj);
+    form.append('_template', 'table');
+    form.append('_captcha', 'false');
+    form.append('_url', window.location.href);
+
+    if(ccEmail){
+      form.append('_cc', ccEmail);
     }
 
-    // 2) 폴백: 첨부파일 포함 .eml 초안 생성
-    const eml = buildEml({
-      to,
-      subject: subj,
-      body,
-      dataUrl: shareURL,
-      filename
+    const res = await fetch(FORM_ENDPOINT, {
+      method: 'POST',
+      body: form,
+      headers: {
+        'Accept': 'application/json'
+      }
     });
 
-    downloadBlob(
-      new Blob([eml], { type: 'message/rfc822;charset=utf-8' }),
-      filename.replace(/\.jpg$/i, '.eml')
-    );
-
-    showRes(
-      'emailRes',
-      '첨부사진이 포함된 메일 초안(.eml)을 다운로드했습니다. 파일을 열어 메일 앱에서 바로 보내세요.',
-      true
-    );
-
-  }catch(e){
-    // 3) 최종 폴백: 사진 다운로드 + mailto
+    let result = null;
     try{
-      const a = document.createElement('a');
-      a.href = shareURL;
-      a.download = filename;
-      a.click();
+      result = await res.json();
+    }catch(_e){}
 
-      setTimeout(() => {
-        window.location.href =
-          `mailto:${to}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(
-            body + '\n\n[안내] 첨부할 사진 파일이 자동 다운로드되었습니다. 메일에 첨부 후 발송하세요.'
-          )}`;
-      }, 300);
-
+    if(res.ok){
       showRes(
         'emailRes',
-        '기본 메일 앱을 열고 사진도 다운로드했습니다. 사진을 첨부해서 발송하세요.',
+        ccEmail
+          ? '메일 전송 완료. 사진이 첨부되었고, 입력한 이메일은 CC로 추가되었습니다.'
+          : '메일 전송 완료. 사진이 첨부되었습니다.',
         true
       );
-    }catch(err){
-      showRes('emailRes', '이메일 기능 실행 중 오류가 발생했습니다: ' + err.message, false);
+    }else{
+      showRes('emailRes', result?.message || '메일 전송 실패', false);
     }
+
+  }catch(e){
+    showRes('emailRes', '오류: ' + e.message, false);
   }finally{
     btn.disabled = false;
     btn.textContent = '✉️ 이메일 보내기';
@@ -1021,8 +1008,12 @@ async function doSMS(){
       mode:'cors'
     });
     const j=await res.json();
-    if(j.result==='100'||j.result===100)showRes('smsRes',`✅ ${to} 로 문자 전송 완료!`,true);
-    else showRes('smsRes',`⚠️ 전송 실패 (코드: ${j.result})`,false);
+
+    if(j.result==='100'||j.result===100){
+      showRes('smsRes',`✅ ${to} 로 문자 전송 완료!`,true);
+    }else{
+      showRes('smsRes',`⚠️ 전송 실패 (코드: ${j.result})`,false);
+    }
   }catch(e){
     showRes('smsRes',e.name==='TypeError'?'🚫 CORS 차단 — 서버 프록시가 필요합니다':'오류: '+e.message,false);
   }finally{
@@ -1044,7 +1035,7 @@ const td=new Date();
 const ds=`📍 ${td.getFullYear()}. ${String(td.getMonth()+1).padStart(2,'0')}. ${String(td.getDate()).padStart(2,'0')}`;
 const dtpl=document.getElementById('dateTpl');
 if(dtpl){
-  dtpl.onclick=function(){pickTpl(this,ds);};
+  dtpl.onclick=function(){ pickTpl(this,ds); };
 }
 
 // ══════════════════════════
